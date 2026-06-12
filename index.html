@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cherry-Pick UI</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a212b; --line: #2c3744; --text: #e6edf3;
+    --muted: #93a1b0; --accent: #4ea1ff; --kept: #4ea1ff; --drop: #4a5663;
+    --warn: #ffb454; --danger: #ff6b6b; --ok: #57d18a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+  button, select, input {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .danger { border-color: #5a2c2c; }
+  .danger:hover { border-color: var(--danger); }
+  label { color: var(--muted); }
+
+  /* top bar */
+  #topbar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px 12px; border-bottom: 1px solid var(--line); flex: 0 0 auto;
+  }
+  #topbar .grow { flex: 1; }
+  #fileName { color: var(--muted); max-width: 38vw; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #counter { font-variant-numeric: tabular-nums; }
+  #counter b { color: var(--accent); }
+
+  /* panels */
+  #panels { flex: 1; display: flex; min-height: 0; }
+  .panel { flex: 1; display: flex; flex-direction: column; min-width: 0;
+    border-right: 1px solid var(--line); }
+  .panel:last-child { border-right: none; }
+  .panel h2 { margin: 0; padding: 7px 12px; font-size: 13px; font-weight: 600;
+    border-bottom: 1px solid var(--line); color: var(--muted); }
+  .panel h2 span { color: var(--muted); font-weight: 400; }
+  .canvas-wrap { flex: 1; position: relative; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%;
+    cursor: crosshair; display: block; }
+  @media (max-width: 720px) { #panels { flex-direction: column; }
+    .panel { border-right: none; border-bottom: 1px solid var(--line); } }
+
+  /* controls */
+  #controls { flex: 0 0 auto; display: flex; flex-wrap: wrap;
+    align-items: center; gap: 8px 14px; padding: 9px 12px;
+    border-top: 1px solid var(--line); }
+  #controls .group { display: flex; align-items: center; gap: 6px; }
+  #controls .sep { width: 1px; align-self: stretch; background: var(--line); }
+
+  /* modal */
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; z-index: 10; }
+  #overlay.show { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 20px; width: min(560px, 92vw);
+    max-height: 88vh; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .modal h3 { margin: 0 0 14px; }
+  .modal .row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  .modal .row > label:first-child { flex: 0 0 130px; }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 8px;
+    margin-top: 18px; }
+  .issues { border: 1px solid #5a4626; background: #2a2114; border-radius: 8px;
+    padding: 10px 12px; margin: 12px 0; }
+  .issues .title { color: var(--warn); font-weight: 600; margin-bottom: 6px; }
+  .issues code { display: block; color: var(--muted); font-size: 12px;
+    white-space: pre-wrap; word-break: break-all; margin: 2px 0; }
+  .menu { position: relative; }
+  .menu-pop { position: absolute; right: 48px; top: calc(100% + 6px);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px; width: 420px; max-width: calc(100vw - 32px); display: none; z-index: 5;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .menu-pop.show { display: block; }
+  .menu-pop .row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+  .menu-pop .row > label:first-child { flex: 0 0 54px; color: var(--muted); }
+  .menu-pop select, .menu-pop input { min-width: 0; }
+  #expOrder, #expSet, #expName { flex: 1; }
+  #expDir { flex: 0 0 92px; }
+  #expDir:disabled { opacity: .4; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .empty { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; color: var(--muted); text-align: center; padding: 20px; }
+
+  /* drag & drop */
+  #dropzone { position: fixed; inset: 0; z-index: 50; display: none;
+    align-items: center; justify-content: center; pointer-events: none;
+    background: rgba(15,20,25,.82); }
+  #dropzone.show { display: flex; }
+  #dropzone .box { border: 2px dashed var(--accent); border-radius: 14px;
+    padding: 40px 64px; font-size: 18px; color: var(--text);
+    background: rgba(78,161,255,.08); }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <button id="loadBtn">Load CSV…</button>
+  <input type="file" id="fileInput" accept=".csv,.tsv,.txt" style="display:none">
+  <span id="fileName">no file loaded</span>
+  <span class="grow"></span>
+  <span id="counter">kept <b>0</b> / 0</span>
+  <button id="resetViewBtn" title="Reset zoom/pan">Reset view</button>
+  <div class="menu">
+    <button id="exportBtn" disabled>Export ▾</button>
+    <div class="menu-pop" id="exportPop">
+      <div class="row">
+        <label>Order</label>
+        <select id="expOrder">
+          <option value="orig">Keep original order</option>
+          <option value="x">Order by X</option>
+          <option value="y">Order by Y</option>
+        </select>
+        <select id="expDir">
+          <option value="asc">asc</option>
+          <option value="desc">desc</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Set</label>
+        <select id="expSet">
+          <option value="kept">Kept subset</option>
+          <option value="dropped">Dropped complement</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>File</label>
+        <input id="expName" style="flex:1" placeholder="subset.csv">
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button id="doExportBtn">Download CSV</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="panels">
+  <div class="panel">
+    <h2>All data <span>— click a point to toggle it in/out of the subset</span></h2>
+    <div class="canvas-wrap"><canvas id="cvA"></canvas>
+      <div class="empty" id="emptyA">Click “Load CSV…” or drag a CSV file anywhere to begin.</div></div>
+  </div>
+  <div class="panel">
+    <h2>Kept subset <span>— click a point to remove it</span></h2>
+    <div class="canvas-wrap"><canvas id="cvB"></canvas>
+      <div class="empty" id="emptyB"></div></div>
+  </div>
+</div>
+
+<div id="controls">
+  <div class="group"><label>X</label><select id="xCol"></select></div>
+  <div class="group"><label>Y</label><select id="yCol"></select></div>
+  <div class="sep"></div>
+  <div class="group"><label>X scale</label>
+    <select id="xScale"><option value="linear">linear</option><option value="log">log</option></select></div>
+  <div class="group"><label>Y scale</label>
+    <select id="yScale"><option value="linear">linear</option><option value="log">log</option></select></div>
+  <div class="sep"></div>
+  <div class="group"><label>Default new</label>
+    <select id="defaultKept"><option value="true">kept</option><option value="false">dropped</option></select></div>
+  <div class="group">
+    <label><input type="checkbox" id="sharedZoom" checked> shared zoom</label>
+  </div>
+  <div class="sep"></div>
+  <div class="group">
+    <button id="selAll">Select all</button>
+    <button id="clrAll" class="danger">Clear all</button>
+    <button id="invert" class="danger">Invert</button>
+    <button id="resetSel" class="danger">Reset</button>
+  </div>
+</div>
+
+<div id="dropzone"><div class="box">Drop a CSV file to load</div></div>
+
+<!-- Import modal -->
+<div id="overlay">
+  <div class="modal">
+    <h3>Import CSV</h3>
+    <div class="row">
+      <label>Delimiter</label>
+      <select id="mDelim">
+        <option value=",">comma ,</option>
+        <option value="&#9;">tab</option>
+        <option value=";">semicolon ;</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>First row</label>
+      <label><input type="checkbox" id="mHeader"> is a header</label>
+    </div>
+    <div class="row">
+      <label>X column</label><select id="mX" style="flex:1"></select>
+    </div>
+    <div class="row">
+      <label>Y column</label><select id="mY" style="flex:1"></select>
+    </div>
+    <div class="row">
+      <label>X scale</label>
+      <select id="mXScale"><option value="linear">linear</option><option value="log">log</option></select>
+      <label style="flex:0 0 40px;text-align:right">Y scale</label>
+      <select id="mYScale"><option value="linear">linear</option><option value="log">log</option></select>
+    </div>
+    <div class="row">
+      <label>Start with</label>
+      <select id="mInit"><option value="true">all points kept</option><option value="false">none kept</option></select>
+    </div>
+    <div id="mIssues"></div>
+    <div class="actions">
+      <button id="mCancel">Cancel</button>
+      <button id="mPlot">Plot</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+//============================================================================
+// State
+//============================================================================
+const S = {
+  fileName: "", delimiter: ",", hasHeader: false,
+  headers: [], rows: [],        // rows: { raw, cells, x, y, kept, origIndex }
+  xCol: 0, yCol: 1, xScale: "linear", yScale: "linear",
+  defaultKept: true, sharedZoom: true,
+  view: { A: null, B: null },   // {sxMin,sxMax,syMin,syMax} in scaled space
+};
+let PENDING = null; // parsed-but-not-committed import payload
+
+const $ = id => document.getElementById(id);
+
+//============================================================================
+// CSV parsing
+//============================================================================
+function splitLine(line, delim) {
+  const out = []; let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === delim) { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function sniffDelimiter(lines) {
+  const cands = [",", "\t", ";"];
+  let best = ",", bestScore = -1;
+  for (const d of cands) {
+    const counts = lines.slice(0, 10).map(l => splitLine(l, d).length);
+    const cols = counts[0] || 1;
+    if (cols < 2) continue;
+    const consistent = counts.filter(c => c === cols).length;
+    const score = cols * 100 + consistent;
+    if (score > bestScore) { bestScore = score; best = d; }
+  }
+  return best;
+}
+
+const isNum = s => s !== "" && s != null && isFinite(Number(s));
+
+function looksLikeHeader(firstCells, secondCells) {
+  if (!secondCells) return false;
+  const firstNumeric = firstCells.some(isNum);
+  const secondNumeric = secondCells.some(isNum);
+  return !firstNumeric && secondNumeric;
+}
+
+//============================================================================
+// Import flow
+//============================================================================
+$("loadBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ""; };
+
+function loadFile(f) {
+  const rdr = new FileReader();
+  rdr.onload = () => beginImport(f.name, rdr.result);
+  rdr.onerror = () => alert("Could not read that file.");
+  rdr.readAsText(f);
+}
+
+// Drag & drop anywhere in the window
+const dragHasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+let dragDepth = 0;
+window.addEventListener("dragenter", e => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault(); dragDepth++; $("dropzone").classList.add("show");
+});
+window.addEventListener("dragover", e => { if (dragHasFiles(e)) e.preventDefault(); });
+window.addEventListener("dragleave", e => {
+  if (!dragHasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) $("dropzone").classList.remove("show");
+});
+window.addEventListener("drop", e => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $("dropzone").classList.remove("show");
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+function beginImport(name, text) {
+  // confirm if there are unexported edits
+  if (S.rows.length && !confirm("Loading a new file discards the current session. Continue?"))
+    return;
+  const rawLines = text.split(/\r\n|\r|\n/).filter(l => l.length > 0);
+  if (rawLines.length === 0) { alert("File is empty."); return; }
+  const delim = sniffDelimiter(rawLines);
+  const cell0 = splitLine(rawLines[0], delim);
+  const cell1 = rawLines[1] ? splitLine(rawLines[1], delim) : null;
+  const header = looksLikeHeader(cell0, cell1);
+  PENDING = { name, rawLines, delim, header };
+
+  // populate modal
+  $("mDelim").value = delim;
+  $("mHeader").checked = header;
+  $("mXScale").value = "linear";
+  $("mYScale").value = "linear";
+  $("mInit").value = "true";
+  refreshModalColumns();
+  $("overlay").classList.add("show");
+}
+
+function pendingHeaders() {
+  const delim = $("mDelim").value;
+  const cells0 = splitLine(PENDING.rawLines[0], delim);
+  const n = cells0.length;
+  if ($("mHeader").checked) return cells0.map(s => s.trim() || `col ${cells0.indexOf(s)}`);
+  return Array.from({ length: n }, (_, i) => `col ${i}`);
+}
+
+function refreshModalColumns() {
+  const heads = pendingHeaders();
+  const defaults = { mX: 0, mY: heads.length > 1 ? 1 : 0 };
+  for (const id of ["mX", "mY"]) {
+    const sel = $(id);
+    const hadOptions = sel.options.length > 0; // false on first populate
+    const prev = sel.value;
+    sel.innerHTML = heads.map((h, i) => `<option value="${i}">${escapeHtml(h)}</option>`).join("");
+    sel.value = (hadOptions && prev !== "" && +prev < heads.length)
+      ? prev : String(defaults[id]);
+  }
+  validateModal();
+}
+
+function validateModal() {
+  const delim = $("mDelim").value;
+  const hasHeader = $("mHeader").checked;
+  const xi = +$("mX").value, yi = +$("mY").value;
+  const dataLines = PENDING.rawLines.slice(hasHeader ? 1 : 0);
+  const ncols = pendingHeaders().length;
+  const bad = [];
+  dataLines.forEach((raw, k) => {
+    const cells = splitLine(raw, delim);
+    const fileLine = (hasHeader ? 2 : 1) + k;
+    let reason = null;
+    if (cells.length !== ncols) reason = `expected ${ncols} columns, got ${cells.length}`;
+    else if (!isNum(cells[xi])) reason = `X (“${cells[xi] ?? ""}”) not numeric`;
+    else if (!isNum(cells[yi])) reason = `Y (“${cells[yi] ?? ""}”) not numeric`;
+    if (reason) bad.push({ fileLine, raw, reason });
+  });
+  PENDING.bad = bad;
+
+  const box = $("mIssues");
+  if (bad.length === 0) { box.innerHTML = ""; }
+  else {
+    const shown = bad.slice(0, 3).map(b =>
+      `<code>line ${b.fileLine}: ${escapeHtml(b.raw)} — ${escapeHtml(b.reason)}</code>`).join("");
+    box.innerHTML = `<div class="issues"><div class="title">⚠ Issues with ${bad.length} row${bad.length>1?"s":""}; these will be dropped if you proceed with import.</div>${shown}${bad.length>3?`<code>…and ${bad.length-3} more</code>`:""}</div>`;
+  }
+}
+
+["mDelim","mHeader","mX","mY"].forEach(id =>
+  $(id).addEventListener("change", () => {
+    if (["mDelim","mHeader"].includes(id)) refreshModalColumns(); else validateModal();
+  }));
+$("mCancel").onclick = () => { $("overlay").classList.remove("show"); PENDING = null; };
+$("mPlot").onclick = commitImport;
+
+function commitImport() {
+  const delim = $("mDelim").value;
+  const hasHeader = $("mHeader").checked;
+  const heads = pendingHeaders();
+  const xi = +$("mX").value, yi = +$("mY").value;
+  const init = $("mInit").value === "true";
+  const dataLines = PENDING.rawLines.slice(hasHeader ? 1 : 0);
+  const ncols = heads.length;
+
+  const rows = [];
+  dataLines.forEach(raw => {
+    const cells = splitLine(raw, delim);
+    if (cells.length !== ncols || !isNum(cells[xi]) || !isNum(cells[yi])) return; // drop bad
+    rows.push({ raw, cells, x: +cells[xi], y: +cells[yi], kept: init, origIndex: rows.length });
+  });
+  if (rows.length === 0) { alert("No valid rows to plot."); return; }
+
+  Object.assign(S, {
+    fileName: PENDING.name, delimiter: delim, hasHeader, headers: heads,
+    rows, xCol: xi, yCol: yi,
+    xScale: $("mXScale").value, yScale: $("mYScale").value, defaultKept: init,
+  });
+  S.headerLine = hasHeader ? PENDING.rawLines[0] : null;
+  PENDING = null;
+  $("overlay").classList.remove("show");
+
+  // sync controls bar
+  populateColSelect($("xCol"), xi); populateColSelect($("yCol"), yi);
+  $("xScale").value = S.xScale; $("yScale").value = S.yScale;
+  $("defaultKept").value = String(S.defaultKept);
+  $("fileName").textContent = S.fileName;
+  $("exportBtn").disabled = false;
+  $("expName").value = baseName(S.fileName) + "_subset.csv";
+  $("emptyA").style.display = "none"; $("emptyB").style.display = "none";
+
+  recomputeXY();
+  resetView();
+  render();
+}
+
+function populateColSelect(sel, val) {
+  sel.innerHTML = S.headers.map((h, i) => `<option value="${i}">${escapeHtml(h)}</option>`).join("");
+  sel.value = val;
+}
+
+//============================================================================
+// Geometry & scales
+//============================================================================
+const toS = (v, scale) => scale === "log" ? Math.log10(v) : v;     // value -> scaled
+const fromS = (s, scale) => scale === "log" ? Math.pow(10, s) : s; // scaled -> value
+
+function recomputeXY() {
+  // x,y already set; nothing extra now, kept for clarity / future column change
+}
+
+function dataBounds() {
+  let sxMin = Infinity, sxMax = -Infinity, syMin = Infinity, syMax = -Infinity;
+  for (const r of S.rows) {
+    if (S.xScale === "log" && r.x <= 0) continue;
+    if (S.yScale === "log" && r.y <= 0) continue;
+    const sx = toS(r.x, S.xScale), sy = toS(r.y, S.yScale);
+    if (sx < sxMin) sxMin = sx; if (sx > sxMax) sxMax = sx;
+    if (sy < syMin) syMin = sy; if (sy > syMax) syMax = sy;
+  }
+  if (!isFinite(sxMin)) { sxMin = 0; sxMax = 1; }
+  if (!isFinite(syMin)) { syMin = 0; syMax = 1; }
+  const px = (sxMax - sxMin) * 0.04 || 0.5, py = (syMax - syMin) * 0.04 || 0.5;
+  return { sxMin: sxMin - px, sxMax: sxMax + px, syMin: syMin - py, syMax: syMax + py };
+}
+
+function resetView() {
+  const b = dataBounds();
+  S.view.A = { ...b }; S.view.B = { ...b };
+}
+
+const MARGIN = { l: 56, r: 14, t: 12, b: 34 };
+
+function plotRect(cv) {
+  return { x: MARGIN.l, y: MARGIN.t,
+           w: cv.clientWidth - MARGIN.l - MARGIN.r,
+           h: cv.clientHeight - MARGIN.t - MARGIN.b };
+}
+
+function project(r, view, rect) {
+  const sx = toS(r.x, S.xScale), sy = toS(r.y, S.yScale);
+  const px = rect.x + (sx - view.sxMin) / (view.sxMax - view.sxMin) * rect.w;
+  const py = rect.y + rect.h - (sy - view.syMin) / (view.syMax - view.syMin) * rect.h;
+  return { px, py };
+}
+
+//============================================================================
+// Rendering
+//============================================================================
+const PANELS = {
+  A: { cv: $("cvA"), get view() { return S.view.A; }, set view(v) { S.view.A = v; },
+       filter: () => S.rows },
+  B: { cv: $("cvB"), get view() { return S.view.B; }, set view(v) { S.view.B = v; },
+       filter: () => S.rows.filter(r => r.kept) },
+};
+
+function render() {
+  drawPanel("A"); drawPanel("B");
+  const kept = S.rows.filter(r => r.kept).length;
+  $("counter").innerHTML = `kept <b>${kept}</b> / ${S.rows.length}`;
+  $("emptyB").style.display = (S.rows.length && kept === 0) ? "flex" : "none";
+  $("emptyB").textContent = "Subset is empty — click points on the left to add them.";
+}
+
+function drawPanel(key) {
+  const P = PANELS[key], cv = P.cv, view = P.view;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cv.clientWidth, cv.clientHeight);
+  if (!S.rows.length || !view) return;
+  const rect = plotRect(cv);
+  drawAxes(ctx, rect, view);
+
+  for (const r of P.filter()) {
+    if (S.xScale === "log" && r.x <= 0) continue;
+    if (S.yScale === "log" && r.y <= 0) continue;
+    const { px, py } = project(r, view, rect);
+    if (px < rect.x - 4 || px > rect.x + rect.w + 4) continue;
+    if (py < rect.y - 4 || py > rect.y + rect.h + 4) continue;
+    if (key === "A" && !r.kept) {            // dropped: hollow grey
+      ctx.beginPath(); ctx.arc(px, py, 3.2, 0, 7);
+      ctx.strokeStyle = "#5a6675"; ctx.lineWidth = 1.3; ctx.stroke();
+    } else {                                  // kept: solid accent
+      ctx.beginPath(); ctx.arc(px, py, 3.6, 0, 7);
+      ctx.fillStyle = "#4ea1ff"; ctx.fill();
+    }
+  }
+}
+
+function niceTicks(min, max, n) {
+  const span = max - min; if (span <= 0) return [min];
+  const step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  const ticks = []; let t = Math.ceil(min / step) * step;
+  for (; t <= max + step * 1e-9; t += step) ticks.push(t);
+  return ticks;
+}
+
+function fmt(v) {
+  if (v === 0) return "0";
+  const a = Math.abs(v);
+  if (a >= 1e4 || a < 1e-3) return v.toExponential(1);
+  return (+v.toFixed(4)).toString();
+}
+
+function drawAxes(ctx, rect, view) {
+  ctx.strokeStyle = "#2c3744"; ctx.fillStyle = "#93a1b0";
+  ctx.lineWidth = 1; ctx.font = "11px system-ui";
+  // border
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  // x ticks (in scaled space; labels show real values)
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const st of niceTicks(view.sxMin, view.sxMax, 6)) {
+    const px = rect.x + (st - view.sxMin) / (view.sxMax - view.sxMin) * rect.w;
+    if (px < rect.x - 1 || px > rect.x + rect.w + 1) continue;
+    ctx.strokeStyle = "#222c37";
+    ctx.beginPath(); ctx.moveTo(px, rect.y); ctx.lineTo(px, rect.y + rect.h); ctx.stroke();
+    ctx.fillText(fmt(fromS(st, S.xScale)), px, rect.y + rect.h + 5);
+  }
+  // y ticks
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const st of niceTicks(view.syMin, view.syMax, 6)) {
+    const py = rect.y + rect.h - (st - view.syMin) / (view.syMax - view.syMin) * rect.h;
+    if (py < rect.y - 1 || py > rect.y + rect.h + 1) continue;
+    ctx.strokeStyle = "#222c37";
+    ctx.beginPath(); ctx.moveTo(rect.x, py); ctx.lineTo(rect.x + rect.w, py); ctx.stroke();
+    ctx.fillText(fmt(fromS(st, S.yScale)), rect.x - 6, py);
+  }
+  // axis labels
+  ctx.fillStyle = "#93a1b0"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  const xl = S.headers[S.xCol] + (S.xScale === "log" ? " (log)" : "");
+  ctx.fillText(xl, rect.x + rect.w / 2, rect.y + rect.h + 28);
+  ctx.save();
+  ctx.translate(14, rect.y + rect.h / 2); ctx.rotate(-Math.PI / 2);
+  const yl = S.headers[S.yCol] + (S.yScale === "log" ? " (log)" : "");
+  ctx.fillText(yl, 0, 0); ctx.restore();
+}
+
+//============================================================================
+// Hit testing & click toggle
+//============================================================================
+function nearestRow(P, mx, my) {
+  const rect = plotRect(P.cv), view = P.view;
+  let best = null, bestD = 13 * 13; // 13px radius
+  for (const r of P.filter()) {
+    if (S.xScale === "log" && r.x <= 0) continue;
+    if (S.yScale === "log" && r.y <= 0) continue;
+    const { px, py } = project(r, view, rect);
+    const d = (px - mx) ** 2 + (py - my) ** 2;
+    if (d < bestD) { bestD = d; best = r; }
+  }
+  return best;
+}
+
+function setupPanel(key) {
+  const P = PANELS[key], cv = P.cv;
+  let drag = null, moved = false;
+
+  cv.addEventListener("mousedown", e => {
+    drag = { x: e.offsetX, y: e.offsetY, view: { ...P.view } }; moved = false;
+  });
+  window.addEventListener("mouseup", () => { drag = null; });
+  cv.addEventListener("mousemove", e => {
+    if (!drag) return;
+    const rect = plotRect(cv);
+    const dx = (e.offsetX - drag.x) / rect.w * (drag.view.sxMax - drag.view.sxMin);
+    const dy = (e.offsetY - drag.y) / rect.h * (drag.view.syMax - drag.view.syMin);
+    if (Math.abs(e.offsetX - drag.x) + Math.abs(e.offsetY - drag.y) > 3) moved = true;
+    const nv = { sxMin: drag.view.sxMin - dx, sxMax: drag.view.sxMax - dx,
+                 syMin: drag.view.syMin + dy, syMax: drag.view.syMax + dy };
+    applyView(key, nv); render();
+  });
+  cv.addEventListener("click", e => {
+    if (moved) return; // was a pan, not a click
+    const r = nearestRow(P, e.offsetX, e.offsetY);
+    if (!r) return;
+    if (key === "A") r.kept = !r.kept; else r.kept = false;
+    render();
+  });
+  cv.addEventListener("wheel", e => {
+    e.preventDefault();
+    const rect = plotRect(cv), view = P.view;
+    const f = e.deltaY < 0 ? 0.85 : 1 / 0.85;
+    const fx = (e.offsetX - rect.x) / rect.w, fy = 1 - (e.offsetY - rect.y) / rect.h;
+    const ax = view.sxMin + fx * (view.sxMax - view.sxMin);
+    const ay = view.syMin + fy * (view.syMax - view.syMin);
+    const nv = {
+      sxMin: ax - (ax - view.sxMin) * f, sxMax: ax + (view.sxMax - ax) * f,
+      syMin: ay - (ay - view.syMin) * f, syMax: ay + (view.syMax - ay) * f,
+    };
+    applyView(key, nv); render();
+  }, { passive: false });
+}
+
+function applyView(key, v) {
+  if (S.sharedZoom) { S.view.A = v; S.view.B = { ...v }; }
+  else PANELS[key].view = v;
+}
+
+setupPanel("A"); setupPanel("B");
+
+//============================================================================
+// Controls
+//============================================================================
+$("xCol").onchange = e => { S.xCol = +e.target.value; onColumnChange(); };
+$("yCol").onchange = e => { S.yCol = +e.target.value; onColumnChange(); };
+$("xScale").onchange = e => { S.xScale = e.target.value; resetView(); render(); };
+$("yScale").onchange = e => { S.yScale = e.target.value; resetView(); render(); };
+$("defaultKept").onchange = e => { S.defaultKept = e.target.value === "true"; };
+$("sharedZoom").onchange = e => {
+  S.sharedZoom = e.target.checked;
+  if (S.sharedZoom) S.view.B = { ...S.view.A };
+  render();
+};
+
+function onColumnChange() {
+  // recompute x/y and re-validate; warn if the new columns make rows invalid
+  let bad = 0;
+  for (const r of S.rows) {
+    r.x = Number(r.cells[S.xCol]); r.y = Number(r.cells[S.yCol]);
+    if (!isFinite(r.x) || !isFinite(r.y)) bad++;
+  }
+  if (bad) alert(`${bad} row(s) have non-numeric values in the chosen columns and won't be shown. Re-import if you need to drop them from export.`);
+  resetView(); render();
+}
+
+$("resetViewBtn").onclick = () => { resetView(); render(); };
+
+function bulk(label, fn, affected) {
+  const n = affected();
+  if (n > 0 && !confirm(`${label} will change ${n} point${n>1?"s":""}. Are you sure?`)) return;
+  fn(); render();
+}
+$("selAll").onclick = () => bulk("Select all",
+  () => S.rows.forEach(r => r.kept = true), () => S.rows.filter(r => !r.kept).length);
+$("clrAll").onclick = () => bulk("Clear all",
+  () => S.rows.forEach(r => r.kept = false), () => S.rows.filter(r => r.kept).length);
+$("invert").onclick = () => bulk("Invert",
+  () => S.rows.forEach(r => r.kept = !r.kept), () => S.rows.length);
+$("resetSel").onclick = () => bulk("Reset",
+  () => S.rows.forEach(r => r.kept = S.defaultKept),
+  () => S.rows.filter(r => r.kept !== S.defaultKept).length);
+
+//============================================================================
+// Export
+//============================================================================
+$("exportBtn").onclick = () => $("exportPop").classList.toggle("show");
+$("expOrder").onchange = () => { $("expDir").disabled = $("expOrder").value === "orig"; };
+$("expDir").disabled = $("expOrder").value === "orig"; // initial state
+document.addEventListener("click", e => {
+  if (!e.target.closest(".menu")) $("exportPop").classList.remove("show");
+});
+$("doExportBtn").onclick = () => {
+  const set = $("expSet").value;
+  let sel = S.rows.filter(r => set === "kept" ? r.kept : !r.kept);
+  if (sel.length === 0) { alert("Nothing to export in that set."); return; }
+  const order = $("expOrder").value, dir = $("expDir").value === "asc" ? 1 : -1;
+  if (order === "x") sel = [...sel].sort((a, b) => (a.x - b.x) * dir);
+  else if (order === "y") sel = [...sel].sort((a, b) => (a.y - b.y) * dir);
+  else sel = [...sel].sort((a, b) => (a.origIndex - b.origIndex) * dir);
+
+  const lines = [];
+  if (S.headerLine != null) lines.push(S.headerLine);
+  for (const r of sel) lines.push(r.raw);
+  const blob = new Blob([lines.join("\n") + "\n"], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = $("expName").value.trim() || "subset.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  $("exportPop").classList.remove("show");
+};
+
+//============================================================================
+// Helpers
+//============================================================================
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function baseName(name) { return name.replace(/\.[^.]+$/, ""); }
+
+window.addEventListener("resize", () => { if (S.rows.length) render(); });
+</script>
+</body>
+</html>
