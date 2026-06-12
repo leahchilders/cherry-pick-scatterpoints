@@ -1,6 +1,6 @@
 # Cherry-Pick UI
 
-Extremely small local tool for hand-picking a visually pleasing subset of points from a scatter plot and exporting it as a CSV that mirrors the input. No install, no server, no internet, just a singleself-contained `index.html` that runs in your browser.
+Extremely small local tool for hand-picking a visually pleasing subset of points from a scatter plot and exporting it as a CSV that mirrors the input. No install, no server, no internet, just a single self-contained `index.html` that runs in your browser.
 
 ## Why?
 
