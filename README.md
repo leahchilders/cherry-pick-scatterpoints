@@ -53,9 +53,3 @@ Click **Export ▾**:
 - **File** — output name (defaults to `<original>_subset.csv`).
 
 The exported CSV matches the input exactly: same delimiter, same header (or none), all original columns, and the original cell text — so numeric precision is preserved. Only the rows you kept are written, in the order you chose.
-
-## Notes
-
-- Everything runs locally in the browser; your data never leaves your machine.
-- One file at a time. Loading a new file warns before discarding the current session.
-- Edit `index.html` directly to tweak behavior — it's plain HTML/CSS/JS, no build step.
